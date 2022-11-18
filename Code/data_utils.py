@@ -1,9 +1,12 @@
 import pickle
 import os
 import numpy as np
+from tqdm import tqdm
+
+from farthest_point_sampling import farthest_point_sampling
 
 # Load data from pickle files
-def load_files(path = '/home/nichols/Desktop/SkillSequnceing/Data/Nov17/PullFromShelf'):
+def load_files(path = '/home/nichols/Desktop/SkillSequnceing/Data/Nov17/TipThenPull'):
     files = os.listdir(path)
     files = [file for file in files if os.path.splitext(file)[1] == '.pickle']
 
@@ -15,12 +18,32 @@ def load_files(path = '/home/nichols/Desktop/SkillSequnceing/Data/Nov17/PullFrom
     return data
 
 # Transform pickle data to pc-parameters-success
-def get_pcparam_success_pairs(data):
-    pass
+def get_pcparam_success_pairs(path = '/home/nichols/Desktop/SkillSequnceing/Data/Nov17/TipThenPull'):
+    data = load_files(path)
+    pairs = [] # Eements of pc, param, success
+    for dat in tqdm(data, "Loading pairs", len(data)):
+        succ = get_success_from_gym(dat[0])
+        param = get_action_params_from_gym(dat[0])
+        pc = get_pc_from_gym(dat[0])
+        sample_pointcloud(pc)
+
+        pairs.append((pc['point_clouds'][0], param, succ))
+
+
 
 # Sample from point clouds
-def farthest_point_sampling(data):
-    pass
+def sample_pointcloud(data: dict):
+    #Sampling number should probably be configurable, especially since it is needed by model. Alternatively, model could just
+    #read what it is from data.
+    sampling_number = 128
+
+    for timestep_idx in range(len(data["depth"])):
+        for object_name in data["objects"]:
+            pc = data["point_clouds"][timestep_idx][object_name]
+            farthest_indices,_ = farthest_point_sampling(pc, sampling_number)
+            sampled_pc = pc[farthest_indices.squeeze()]
+            data["point_clouds"][timestep_idx][object_name] = sampled_pc
+
 # Extract point clouds from data
 def get_pc_from_gym(data):
     data["point_clouds"] = []
@@ -84,21 +107,42 @@ def get_pc_from_gym(data):
             data["point_clouds"][timestep_idx][object_name] = points[idx]
             idx += 1
 
-    return data["point_clouds"]
+    return data
 
 # Extract success metric from data
 def get_success_from_gym(data):
-    pass
+    target_end_pos = data['objects']['box']['position'][-1]
+    non_target_pos = data['objects']['box2']['position']
+    
+    #Check if box is still relatively high, hasn't fallen to floor.
+    if target_end_pos[2] < 0.5:
+        return False
+    #Check if box has been pulled from shelf or not.
+    if target_end_pos[0] > 1:
+        return False
+
+    #Check if non-target has been moved
+    start = np.array(non_target_pos[0])
+    end = np.array(non_target_pos[-1])
+    dist = np.linalg.norm(start - end)
+    if dist > 0.1:
+        return False
+
+    return True
 
 # Extract parameters from data
 def get_action_params_from_gym(data):
-    pass
+    return data['objects']['box']['position'][0][1]
 
 
 if __name__ == '__main__':
     data = load_files()
     for dat in data:
-        pc = get_pc_from_gym(dat[0])
-        print(len(pc))
-        print(pc)
         break
+        print(get_success_from_gym(dat[0]))
+        print(get_action_params_from_gym(dat[0]))
+        # pc = get_pc_from_gym(dat[0])
+        # sampled_pc = sample_pointcloud(pc)
+        # success =  get_success_from_gym(pc)
+
+    get_pcparam_success_pairs()
