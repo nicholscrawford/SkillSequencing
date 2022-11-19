@@ -71,7 +71,6 @@ if __name__=='__main__':
 
     #TODO:
     # 1. Testing implementation: 
-    #       a. Save model
     #       b. Communicate with gym to send actions
     #       c. PC Prediction for each action
     #       d. Get a desired action.
