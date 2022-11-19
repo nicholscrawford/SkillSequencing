@@ -71,9 +71,8 @@ if __name__=='__main__':
 
     #TODO:
     # 1. Testing implementation: 
-    #       b. Communicate with gym to send actions
     #       c. PC Prediction for each action
-    #       d. Get a desired action.
+    #       d. Sample to get a desired action.
     #
     # 2. Placing books:
     #       a. write skill to place a book

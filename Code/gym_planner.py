@@ -16,6 +16,8 @@ import rospy
 import tf
 import os
 import torch
+import numpy as np
+from matplotlib import pyplot as plt
 from std_srvs.srv import Trigger, TriggerRequest
 from std_msgs.msg import String
 from sensor_msgs.msg import JointState
@@ -297,9 +299,14 @@ class BehaviorRunner:
         self.est_state.rgb #List of rgb messages
         self.est_state.depth #List of depth messages
         
-        #Goal: Update
-        self.state.depth
-        self.state.rgb
+        self.state.rgb = np.frombuffer(self.est_state.rgb[-1].data, dtype=np.uint8).reshape(self.est_state.rgb[-1].height, self.est_state.rgb[-1].width, -1)
+        self.state.depth = np.frombuffer(self.est_state.depth[-1].data, dtype=np.uint8).reshape(self.est_state.depth[-1].height, self.est_state.rgb[-1].width, -1)
+        
+        # Debugging for message interpretation.
+        # plt.imshow(self.state.depth)
+        # plt.show()
+        
+        #Goal: Update pcs
         self.state.point_clouds
 
     def open_hand(self):
