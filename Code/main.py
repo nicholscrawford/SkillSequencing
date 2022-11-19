@@ -68,6 +68,21 @@ if __name__=='__main__':
 
     train(encoder=enc, list_of_predictors=list_of_predictors, epochs=51, data=iopairs_dict, device=device)
 
+    #TODO:
+    # 1. Testing implementation: 
+    #       a. Save model
+    #       b. Communicate with gym to send actions
+    #       c. PC Prediction for each action
+    #       d. Get a desired action.
+    #
+    # 2. Placing books:
+    #       a. write skill to place a book
+    #       b. collect data for book placing
+    #       c. incorperate into model
+    #
+    # 3. Planning:
+    #       a. Use the three skills, and a desired pc, rrt to sequence actions.
+
     # pc_example = iopairs_dict[tasks[0]][0][0]
     # pcl = [pc for pc in list(pc_example.values())]
     # np.array(pcl)
