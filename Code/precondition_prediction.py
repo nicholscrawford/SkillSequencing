@@ -7,6 +7,7 @@ import torchvision
 import numpy as np
 from tqdm import tqdm
 import sys
+import os
 
 # Predict preconditions from a shared latent embedding. 
 
@@ -54,7 +55,15 @@ def train(encoder, list_of_predictors, data, epochs=200, device=torch.cuda.is_av
             encoder_opt.step()
 
         sys.stdout.write(f"\rTotal loss at epoch {epoch+1}/{epochs} is {total_loss}")
-        if((epoch+1)%(int(epochs/5)+1)==0):
+        if((epoch+1)%(int(epochs/5 + 0.5))==0):
+            # Save models.
+            # It's probably fine to just save in f"Checkpoints/ModelName_{epoch}of{epochs}.pth"
+            codepath = os.path.join(os.getcwd(), os.path.dirname(__file__))
+            with open(os.path.join(codepath, f"Checkpoints/Encoder_{epoch+1}of{epochs}.pth"), "wb") as fd:
+                torch.save(encoder, fd)
+            for task, predictor in list_of_predictors.items():
+                with open(os.path.join(codepath, f"Checkpoints/Predictor{task}_{epoch+1}of{epochs}.pth"), "wb") as fd:
+                    torch.save(predictor, fd)
             print()
     print()
 

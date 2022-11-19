@@ -66,7 +66,8 @@ if __name__=='__main__':
                 tensor_datum[i] = torch.tensor(datum[i], device=device, dtype=torch.float32)
             iopairs_dict[task][datum_idx] = tensor_datum
 
-    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=51, data=iopairs_dict, device=device)
+    # Models saved to Checkpoints/modelname_epoch#.pth, for 1/5th of the epochs.
+    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=50, data=iopairs_dict, device=device)
 
     # pc_example = iopairs_dict[tasks[0]][0][0]
     # pcl = [pc for pc in list(pc_example.values())]
