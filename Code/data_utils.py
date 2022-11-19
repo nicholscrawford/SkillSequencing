@@ -29,7 +29,7 @@ def get_pcparam_success_pairs(path = '/home/nichols/Desktop/SkillSequnceing/Data
 
         pairs.append((pc['point_clouds'][0], param, succ))
 
-
+    return pairs
 
 # Sample from point clouds
 def sample_pointcloud(data: dict):
