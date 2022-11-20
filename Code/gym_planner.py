@@ -14,13 +14,16 @@ import sys
 import argparse
 import rospy
 import tf
+import json
 import os
 import torch
+from cv_bridge import CvBridge
 import numpy as np
+
 from matplotlib import pyplot as plt
 from std_srvs.srv import Trigger, TriggerRequest
 from std_msgs.msg import String
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, Image
 from trajectory_msgs.msg import JointTrajectory
 from ll4ma_isaacgym.srv import EstState, EstStateRequest
 
@@ -35,6 +38,8 @@ from moveit_interface.iiwa_planner import IiwaPlanner
 from reflex import ReflexGraspInterface
 
 from precondition_prediction import PC_Encoder, Precond_Predictor
+from data_utils import get_pc_from_rgb_d, farthest_point_sampling_from_pc
+from zmq import device
 
 
 class BehaviorRunner:
@@ -64,6 +69,12 @@ class BehaviorRunner:
         self.state.n_ee_joints = self.n_ee_joints
         self.state.objects = self.session_config.env.objects
         self.state.point_clouds = {}
+
+        self.state.seg_img = None
+        self.state.depth_img = None
+        self.state.seg_ids = None
+        self.state.proj_mat = None
+        self.state.view_mat = None
 
         self.state.joint_names = [
             "iiwa_joint_1",
@@ -104,21 +115,31 @@ class BehaviorRunner:
             else:
                 self.reflex = ReflexGraspInterface()
 
-        codepath = os.path.join(os.getcwd(), os.path.dirname(__file__))
+        # Subscribe for seg_mat ids
+        rospy.Subscriber("/isaacgym/seg_img", Image, self.seg_img_cb)
+        rospy.Subscriber("/isaacgym/depth_img", Image, self.depth_img_cb)
+        rospy.Subscriber("/isaacgym/seg_ids", String, self.seg_ids_cb)
+        rospy.Subscriber("/isaacgym/proj_mat", Image, self.proj_mat_cb)
+        rospy.Subscriber("/isaacgym/view_mat", Image, self.view_mat_cb)
 
+        
+        codepath = os.path.join(os.getcwd(), os.path.dirname(__file__))
         #Temporary shortcut for loading specific models. Eventually should be a param.
-        list_of_predictors = {
+        self.list_of_predictors = {
             "PullFromShelf": None,
             "TipThenPull": None
         }
         epochs = 50
         epoch = 49
 
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         with open(os.path.join(codepath, f"Checkpoints/Encoder_{epoch+1}of{epochs}.pth"), "rb") as fd:
-            encoder = torch.load(fd)
-        for task, predictor in list_of_predictors.items():
+            self.encoder = torch.load(fd)
+            self.encoder.to(self.device)
+        for task, predictor in self.list_of_predictors.items():
             with open(os.path.join(codepath, f"Checkpoints/Predictor{task}_{epoch+1}of{epochs}.pth"), "rb") as fd:
                 predictor = torch.load(fd)
+                predictor.to(self.device)
         print(f"Loaded models from epoch {epoch+1} out of of {epochs}.")
 
 
@@ -186,6 +207,30 @@ class BehaviorRunner:
         if not self.update_env_state():
             rospy.logerr("State could not be fully updated")
             return False
+
+
+        # This is probably where the planning should happen. Create self.behavior, set policy,  then send. 
+        # First, create the current pc embedding.
+        pcs = get_pc_from_rgb_d(
+            rgb = self.state.rgb,
+            dep = self.state.depth_img,
+            object_names = self.state.objects,
+            seg_img = self.state.seg_img,
+            seg_ids = self.state.seg_ids,
+            proj_mat = self.state.proj_mat,
+            view_mat = self.state.view_mat
+        )
+        pcs: None = farthest_point_sampling_from_pc(pcs)
+        pcl = [pc for pc in list(pcs.values())]
+        np.array(pcl)
+        pc_tensor = torch.tensor(pcl, dtype=torch.float32, device=self.device)
+        pc_encoding = self.encoder(pc_tensor)
+        #Add target and environment tags, pos 0 and 1
+        ids = torch.tensor([[1, 0], [0,0], [0, 1]], device=self.device)
+        pc_encoding = torch.concat((pc_encoding, ids), dim=1)
+        
+        #Do sampling to find action param.
+        pc_encoding = torch.reshape(pc_encoding, [-1])
 
         if not self.behavior.set_policy(self.state):
             rospy.logerr("Could not get behavior trajectories")
@@ -305,9 +350,8 @@ class BehaviorRunner:
         # Debugging for message interpretation.
         # plt.imshow(self.state.depth)
         # plt.show()
-        
-        #Goal: Update pcs
-        self.state.point_clouds
+        return True #This is a hack. Need a better success measure, and to include the imgs not being accounted for here.
+
 
     def open_hand(self):
         if self.fake:
@@ -345,6 +389,22 @@ class BehaviorRunner:
 
     def joint_state_cb(self, msg):
         self.joint_state = msg
+
+    def seg_img_cb(self, msg):
+        self.state.seg_img = CvBridge().imgmsg_to_cv2(msg)
+
+    def depth_img_cb(self, msg):
+        self.state.depth_img = CvBridge().imgmsg_to_cv2(msg)
+
+    def seg_ids_cb(self, msg):
+        self.state.seg_ids = json.loads(msg.data)
+
+    def proj_mat_cb(self, msg):
+        self.state.proj_mat = CvBridge().imgmsg_to_cv2(msg)
+
+    def view_mat_cb(self, msg):
+        self.state.view_mat = CvBridge().imgmsg_to_cv2(msg)
+
 
     def wait_for_state_info(self, timeout=30):
         if self.use_state_service:
@@ -409,7 +469,7 @@ if __name__ == "__main__":
         "-c",
         "--config",
         type=str,
-        default="/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/config/iiwa_2block.yaml",
+        default="/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/config/iiwa_tip_then_pull.yaml",
         help="Filename of YAML config for simulation (relative to current directory)",
     )
     parser.add_argument("--device", type=str, default="cpu")

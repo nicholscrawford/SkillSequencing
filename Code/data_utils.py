@@ -44,6 +44,16 @@ def sample_pointcloud(data: dict):
             sampled_pc = pc[farthest_indices.squeeze()]
             data["point_clouds"][timestep_idx][object_name] = sampled_pc
 
+def farthest_point_sampling_from_pc(pointcloud):
+    sampling_number = 128
+    for object_name in pointcloud.keys():
+        pc = pointcloud[object_name]
+        farthest_indices,_ = farthest_point_sampling(pc, sampling_number)
+        sampled_pc = pc[farthest_indices.squeeze()]
+        pointcloud[object_name] = sampled_pc
+    return pointcloud
+
+
 # Extract point clouds from data
 def get_pc_from_gym(data):
     data["point_clouds"] = []
@@ -108,6 +118,68 @@ def get_pc_from_gym(data):
             idx += 1
 
     return data
+
+# Get point cloud from rgb-d and camera and seg info.
+def get_pc_from_rgb_d(rgb, dep, object_names, seg_img, seg_ids, proj_mat, view_mat):
+    point_clouds = {}
+    points = []
+
+    for object_name in object_names:
+        point_clouds[object_name] = []
+
+        color = []
+        for i_o in range(len(object_names)):
+            points.append([])
+        cam_width = 512
+        cam_height = 512
+
+        # Retrieve depth and segmentation buffer
+        depth_buffer = np.array(dep)
+        seg_buffer = seg_img
+        view_matrix = view_mat
+        projection_matrix = proj_mat
+
+        # Get camera view matrix and invert it to transform points from camera to world space
+        #print(view_matrix)
+        vinv = np.linalg.inv(np.matrix(view_matrix))
+
+        # Get camera projection matrix and necessary scaling coefficients for deprojection
+        proj = projection_matrix
+        fu = 2/proj[0, 0]
+        fv = 2/proj[1, 1]
+
+        # Ignore any points which originate from ground plane or empty space
+        depth_buffer[seg_buffer == 0] = -10001
+
+        centerU = cam_width/2
+        centerV = cam_height/2
+        for i in range(cam_width):
+            for j in range(cam_height):
+                if depth_buffer[j, i] < -10000:
+                    continue
+                # This will take all segmentation IDs. Can look at specific objects by
+                # setting equal to a specific segmentation ID, e.g. seg_buffer[j, i] == 2
+                
+                for i_o in range(len(object_names)):
+                    #Assumes object order corresponds to their seg number, which I think is true, but could be good to confirm.
+                    if seg_buffer[j, i] == i_o + 1:
+                        u = -(i-centerU)/(cam_width)  # image-space coordinate
+                        v = (j-centerV)/(cam_height)  # image-space coordinate
+                        d = depth_buffer[j, i]  # depth buffer value
+                        X2 = [d*fu*u, d*fv*v, d, 1]  # deprojection vector
+                        p2 = X2*vinv  # Inverse camera view to get world coordinates
+                        points[i_o].append([p2[0, 2], p2[0, 0], p2[0, 1]])
+                        color.append(0)
+        
+    for i_o in range(len(points)):
+        points[i_o] = np.array(points[i_o])
+        
+    idx = 0
+    for object_name in object_names:
+        point_clouds[object_name] = points[idx]
+        idx += 1
+
+    return point_clouds
 
 # Extract success metric from data
 def get_success_from_gym(data):
