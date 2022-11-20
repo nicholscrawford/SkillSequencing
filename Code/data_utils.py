@@ -1,9 +1,13 @@
 import pickle
 import os
 import numpy as np
+import random
 from tqdm import tqdm
+import torch
 
 from farthest_point_sampling import farthest_point_sampling
+from copy import deepcopy
+
 
 # Load data from pickle files
 def load_files(path = '/home/nichols/Desktop/SkillSequnceing/Data/Nov17/TipThenPull'):
@@ -40,6 +44,9 @@ def sample_pointcloud(data: dict):
     for timestep_idx in range(len(data["depth"])):
         for object_name in data["objects"]:
             pc = data["point_clouds"][timestep_idx][object_name]
+            if pc.ndim != 2:
+                print(f"Pointcloud ndim {pc.ndim}, shape {pc.shape}, for object {object_name} in timestep {timestep_idx} of {len( data['depth'] )}.")
+                continue
             farthest_indices,_ = farthest_point_sampling(pc, sampling_number)
             sampled_pc = pc[farthest_indices.squeeze()]
             data["point_clouds"][timestep_idx][object_name] = sampled_pc
@@ -206,6 +213,23 @@ def get_success_from_gym(data):
 def get_action_params_from_gym(data):
     return data['objects']['box']['position'][0][1]
 
+# Add unrealistic tasks with failure.
+def expand_data(data):
+    factor = 0
+    for key in data.keys():
+        for element in deepcopy(data[key]):
+            for i in range(factor):
+                peturbation = deepcopy(data[key][i][1])
+                peturbation = random.choice([ random.uniform(-0.3, peturbation-0.05), random.uniform(peturbation+0.05, 0.3)])
+                data[key].append(
+                    [
+                        deepcopy(data[key][i][0]), # Copy pc
+                        peturbation, #Move arm to unrealistic position
+                        torch.tensor(0, device = data[key][i][0].device) #Fail
+                    ]
+                )
+
+    return data
 
 if __name__ == '__main__':
     data = load_files()

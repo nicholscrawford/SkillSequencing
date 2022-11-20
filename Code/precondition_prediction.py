@@ -1,3 +1,4 @@
+from data_utils import expand_data
 import torch; torch.manual_seed(0)
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,6 +8,7 @@ import torchvision
 import numpy as np
 from tqdm import tqdm
 import sys
+import random
 import os
 
 # Predict preconditions from a shared latent embedding. 
@@ -22,12 +24,14 @@ def train(encoder, list_of_predictors, data, epochs=200, device=torch.cuda.is_av
     for task, predictor in list_of_predictors.items():
         predictor_opts[task] = torch.optim.Adam(predictor.parameters(), lr = lr)
 
+    data = expand_data(data)
+
     #Define training step
     print("Training model:")
     for epoch in range(epochs):
         total_loss = 0
-        for i in range(len(data[list(data.keys())[0]])):
-            
+        for idx in range(len(data[list(data.keys())[0]])):
+            i = random.randint(0, len(data[list(data.keys())[0]])-1)
             encoder_opt.zero_grad()
             for task, predictor in list_of_predictors.items():
                 pc, param, succ = data[task][i]
@@ -97,9 +101,12 @@ class Precond_Predictor(nn.Module):
         super(Precond_Predictor, self).__init__()
         self.action_param_size = action_param_size
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(3*(16+2)+action_param_size, 16),
+            nn.Linear(3*(16+2)+action_param_size, 32),
+            nn.ReLU(),
+            nn.Linear(32, 16),
             nn.ReLU(),
             nn.Linear(16, 1),
+            nn.Sigmoid()
         )
 
     def forward(self, x):

@@ -12,6 +12,7 @@ to determine the plan and then executes that plan on the real robot.
 from isaacgym import gymtorch, gymapi  # noqa: F401
 import sys
 import argparse
+from ll4ma_isaacgym.core.config import PullFromShelfConfig, TipThenPullConfig
 import rospy
 import tf
 import json
@@ -39,15 +40,15 @@ from reflex import ReflexGraspInterface
 
 from precondition_prediction import PC_Encoder, Precond_Predictor
 from data_utils import get_pc_from_rgb_d, farthest_point_sampling_from_pc
-from zmq import device
-
+from sampling import sample_for_action_param
 
 class BehaviorRunner:
     """docstring for BehaviorRunner."""
 
-    def __init__(self, session_config, rate, use_reflex, fake=False):
+    def __init__(self, session_config, rate, use_reflex, taskcfgdict, fake=False):
         self.session_config = session_config
         self.use_reflex = use_reflex
+        self.taskcfgdict = taskcfgdict
 
         self.rate = rospy.Rate(rate)
         self.tf_listener = tf.TransformListener()
@@ -140,6 +141,7 @@ class BehaviorRunner:
             with open(os.path.join(codepath, f"Checkpoints/Predictor{task}_{epoch+1}of{epochs}.pth"), "rb") as fd:
                 predictor = torch.load(fd)
                 predictor.to(self.device)
+                self.list_of_predictors[task] = predictor
         print(f"Loaded models from epoch {epoch+1} out of of {epochs}.")
 
 
@@ -231,6 +233,22 @@ class BehaviorRunner:
         
         #Do sampling to find action param.
         pc_encoding = torch.reshape(pc_encoding, [-1])
+        
+        action_param, what_action = sample_for_action_param(pc_encoding, self.list_of_predictors) # Desired pc?
+
+        #self.behavior.set_target... Apply action param according to behavior/action, maybe reinitialize behavior
+        selected_behavior = self.taskcfgdict[what_action]
+        selected_behavior.behaviors[0].action_param = action_param
+
+        self.behavior = Behavior(
+            #Behavior(TipThenPullConfig(), self.robot, self.session_config.env, None, self.session_config.device, open_loop=True).set_policy(self.state),
+            selected_behavior,
+            self.robot,
+            self.session_config.env,
+            None,
+            self.session_config.device,
+            open_loop=True,
+        )
 
         if not self.behavior.set_policy(self.state):
             rospy.logerr("Could not get behavior trajectories")
@@ -257,6 +275,8 @@ class BehaviorRunner:
                         )
                         # sys.exit()
                     self.open_hand()
+                elif action == "wide" or action == "close_lone" or action == "close_pair":
+                    self.fake_hand(action)
                 else:
                     rospy.logerr(f"Unknown action string: {action}")
             else:
@@ -490,6 +510,15 @@ if __name__ == "__main__":
         action="store_false",
         help="Leave robot in current configuration on reset",
     )
+    parser.add_argument(
+    "--primitive_task_configs", 
+    nargs="*",
+    type=str,
+    default=[
+        "TipThenPull:/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/config/iiwa_tip_then_pull.yaml", 
+        "PullFromShelf:/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/config/iiwa_pull_from_shelf.yaml",
+        ],
+    )
     parser.add_argument("--fake", action="store_true")
     parser.set_defaults(fake=False)
     parser.set_defaults(use_reflex=True)
@@ -499,8 +528,8 @@ if __name__ == "__main__":
     file_util.check_path_exists(args.config, "Config file")
     session_config = SessionConfig(config_filename=args.config)
     session_config.device = args.device
-
-    runner = BehaviorRunner(session_config, args.rate, args.use_reflex, args.fake)
+    taskcfgdict = {item.split(':')[0] : SessionConfig(config_filename=item.split(':')[1]).task.behavior for item in args.primitive_task_configs}
+    runner = BehaviorRunner(session_config, args.rate, args.use_reflex, taskcfgdict, args.fake)
 
     # import pdb; pdb.set_trace()
     # runner.reflex.test()
