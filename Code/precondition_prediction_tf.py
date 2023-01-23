@@ -46,11 +46,11 @@ def train(encoder, list_of_predictors, data, epochs=200, device=torch.cuda.is_av
                 pc_encoding = torch.concat((pc_encoding, ids), dim=1)
                 
                 #Add action parameter
-                pc_encoding = torch.reshape(pc_encoding, [-1])
+                # pc_encoding = torch.reshape(pc_encoding, [-1])
                 action_param = torch.tensor([param], device=device)
-                pc_encoding = torch.concat((pc_encoding, action_param), dim=0)
+                # pc_encoding = torch.concat((pc_encoding, action_param), dim=0)
 
-                succ_hat = predictor(pc_encoding)
+                succ_hat = predictor(pc_encoding, action_param)
 
                 loss = ((succ - succ_hat)**2).sum()
                 loss.backward()
@@ -96,20 +96,52 @@ class PC_Encoder(nn.Module):
         return logits
         
 
+class LayerNorm(nn.Module):
+    "Construct a layernorm module (See citation for details)."
+
+    def __init__(self, features, eps=1e-6):
+        super(LayerNorm, self).__init__()
+        self.a_2 = nn.Parameter(torch.ones(features))
+        self.b_2 = nn.Parameter(torch.zeros(features))
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        std = x.std(-1, keepdim=True)
+        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
+
 # Predicts precondition from action param and encoded PC.
 class Precond_Predictor(nn.Module):
     def __init__(self, action_param_size) -> None:
         super(Precond_Predictor, self).__init__()
-        self.action_param_size = action_param_size
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(3*(16+2)+action_param_size, 32),
-            nn.ReLU(),
-            nn.Linear(32, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-            nn.Sigmoid()
-        )
+        # self.action_param_size = action_param_size
+        # self.linear_relu_stack = nn.Sequential(
+        #     nn.Linear(3*(16+2)+action_param_size, 32),
+        #     nn.ReLU(),
+        #     nn.Linear(32, 16),
+        #     nn.ReLU(),
+        #     nn.Linear(16, 1),
+        #     nn.Sigmoid()
+        # )
+        self.self_attn = nn.MultiheadAttention(16+2, 9)
+        self.fc = nn.Linear(18, 18)
+        self.relu = nn.ReLU()
+        self.self_attn2 = nn.MultiheadAttention(16+2, 9)
+        self.fc2 = nn.Linear(18*3+1, 1)
+        self.ln = LayerNorm((3, 18))
 
-    def forward(self, x):
-        logits = self.linear_relu_stack(x)
-        return logits
+    def forward(self, x, ap):
+        a, _ = self.self_attn(x,x,x) #Mask?
+        x = a + x
+        x = self.ln(x)
+        x = self.fc(x)
+        a, _ = self.self_attn2(x,x,x) #Mask?
+        x = a + x
+        x = self.ln(x)
+        #Concat action param
+
+        x = torch.reshape(x, [-1])
+        x = torch.concat((x, ap), dim=0)
+
+        x = self.fc2(x)
+        return x

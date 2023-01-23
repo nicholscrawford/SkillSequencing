@@ -20,6 +20,7 @@ import os
 import torch
 from cv_bridge import CvBridge
 import numpy as np
+from copy import deepcopy
 
 from matplotlib import pyplot as plt
 from std_srvs.srv import Trigger, TriggerRequest
@@ -39,7 +40,7 @@ from moveit_interface.iiwa_planner import IiwaPlanner
 from reflex import ReflexGraspInterface
 
 from precondition_prediction import PC_Encoder, Precond_Predictor
-from data_utils import get_pc_from_rgb_d, farthest_point_sampling_from_pc
+from data_utils import get_pc_from_rgb_d, farthest_point_sampling_from_pc, show_pc
 from sampling import sample_for_action_param
 
 class BehaviorRunner:
@@ -133,6 +134,9 @@ class BehaviorRunner:
         epochs = 50
         epoch = 49
 
+        # epochs = 500
+        # epoch = 99
+
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         with open(os.path.join(codepath, f"Checkpoints/Encoder_{epoch+1}of{epochs}.pth"), "rb") as fd:
             self.encoder = torch.load(fd)
@@ -211,7 +215,6 @@ class BehaviorRunner:
             return False
 
 
-        # This is probably where the planning should happen. Create self.behavior, set policy,  then send. 
         # First, create the current pc embedding.
         pcs = get_pc_from_rgb_d(
             rgb = self.state.rgb,
@@ -222,7 +225,15 @@ class BehaviorRunner:
             proj_mat = self.state.proj_mat,
             view_mat = self.state.view_mat
         )
-        pcs: None = farthest_point_sampling_from_pc(pcs)
+        pcs = farthest_point_sampling_from_pc(pcs)
+
+        #show_pc(pcs)
+
+        desired_pc = deepcopy(pcs)
+        desired_pc['box'][:, 2] = desired_pc['box'][:, 2] - np.asarray(self.state.object_states['box'][1]) + 0.2 #Offset by the box's true position, and put it to the left a lil.
+
+        #show_pc(desired_pc)
+
         pcl = [pc for pc in list(pcs.values())]
         np.array(pcl)
         pc_tensor = torch.tensor(pcl, dtype=torch.float32, device=self.device)
@@ -240,6 +251,58 @@ class BehaviorRunner:
         selected_behavior = self.taskcfgdict[what_action]
         selected_behavior.behaviors[0].action_param = action_param
 
+        self.behavior = Behavior(
+            #Behavior(TipThenPullConfig(), self.robot, self.session_config.env, None, self.session_config.device, open_loop=True).set_policy(self.state),
+            selected_behavior,
+            self.robot,
+            self.session_config.env,
+            None,
+            self.session_config.device,
+            open_loop=True,
+        )
+
+        if not self.behavior.set_policy(self.state):
+            rospy.logerr("Could not get behavior trajectories")
+            return False
+
+        actions, names = self._flatten_ros_actions(self.behavior.get_ros_actions())
+        for ai, action in enumerate(actions):
+            if isinstance(action, JointTrajectory):
+                self.command_trajectory(action, preview=preview, wait_secs_for_at_goal=1.5)
+            elif isinstance(action, str):
+                if action == "close":
+                    if not self.use_reflex:
+                        rospy.logerr(
+                            "Cannot execute 'close' behavior, must set "
+                            "use_reflex to true on class creation"
+                        )
+                        # sys.exit()
+                    self.close_hand()
+                elif action == "open":
+                    if not self.use_reflex:
+                        rospy.logerr(
+                            "Cannot execute 'open' behavior, must set "
+                            "use_reflex to true on class creation"
+                        )
+                        # sys.exit()
+                    self.open_hand()
+                elif action == "wide" or action == "close_lone" or action == "close_pair":
+                    self.fake_hand(action)
+                else:
+                    rospy.logerr(f"Unknown action string: {action}")
+            else:
+                rospy.logerr(f"Unknown action type: {type(action)}")
+                return
+
+        #Eventually this should be incorperated into planning.
+        what_action = "SimplePlace"
+        action_param = [0.15]
+
+
+        selected_behavior = self.taskcfgdict[what_action]
+        selected_behavior.behaviors[0].action_param = action_param
+
+        #Run second behavior:
         self.behavior = Behavior(
             #Behavior(TipThenPullConfig(), self.robot, self.session_config.env, None, self.session_config.device, open_loop=True).set_policy(self.state),
             selected_behavior,
@@ -517,6 +580,7 @@ if __name__ == "__main__":
     default=[
         "TipThenPull:/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/config/iiwa_tip_then_pull.yaml", 
         "PullFromShelf:/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/config/iiwa_pull_from_shelf.yaml",
+        "SimplePlace:/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/config/iiwa_simple_place.yaml"
         ],
     )
     parser.add_argument("--fake", action="store_true")

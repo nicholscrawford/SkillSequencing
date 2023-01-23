@@ -5,7 +5,8 @@ import os
 import torch
 import numpy as np
 
-from precondition_prediction import PC_Encoder, Precond_Predictor, train
+#from precondition_prediction import PC_Encoder, Precond_Predictor, train
+from precondition_prediction_tf import PC_Encoder, Precond_Predictor, train
 
 if __name__=='__main__':
     CLI=argparse.ArgumentParser()

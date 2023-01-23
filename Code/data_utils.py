@@ -4,7 +4,7 @@ import numpy as np
 import random
 from tqdm import tqdm
 import torch
-
+import matplotlib.pyplot as plt
 from farthest_point_sampling import farthest_point_sampling
 from copy import deepcopy
 
@@ -231,6 +231,24 @@ def expand_data(data):
 
     return data
 
+def show_pc(pointclouds):
+
+    fig = plt.figure(figsize=(4,4))
+    ax = fig.add_subplot(111, projection='3d') 
+    
+    color_arr = ['red', 'green', 'blue']
+    for i, pointcloud in enumerate(pointclouds.values()):
+        for point in pointcloud:
+            if random.randint(0, 0) == 0:
+                ax.scatter(point[0],-point[2],point[1],c=color_arr[i]) # plot the point (2,3,4) on the figure   
+    
+    # ax.set_xlim(0.6,1.4)
+    # ax.set_ylim(-0.5,0.5)
+    # ax.set_zlim(0.6,1.5)
+
+    plt.show()
+
+    
 if __name__ == '__main__':
     data = load_files()
     for dat in data:
