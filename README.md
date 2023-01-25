@@ -46,8 +46,6 @@ Currently, data is collecting using isaacgym scripts, refer to the ll4ma gym rep
 Currently some things are implemented, but need refinement and cleaning. Current sampling doens't seem to be working. 
 
 **TODO:** 
-- Get sampling working by
-    - Overfitting to data, reduce domain and keep data size
-    - Improving encoding by using pointconv
-    - Different training methods/losses, make sure those are on point
-    - Trying out different sampling methods, and validating
+- Get sampling/prediction working
+    - BCE Loss + PointConv seems to decrease loss rapidly 157-0.0x in >10 itter. Converges to 1 for all vals.
+    - Try adding back in non-correct guesses for pickup?

@@ -108,8 +108,8 @@ def create_param_viz(pcs):
             "PullFromShelf": None,
             "TipThenPull": None
     }
-    epochs = 50
-    epoch = 49
+    epochs = 20
+    epoch = 3
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     with open(os.path.join(codepath, f"Checkpoints/Encoder_{epoch+1}of{epochs}.pth"), "rb") as fd:
         encoder = torch.load(fd)
@@ -125,6 +125,7 @@ def create_param_viz(pcs):
     pcl = [pc for pc in list(pcs.values())]
     np.array(pcl)
     pc_tensor = torch.tensor(pcl, dtype=torch.float32, device=device)
+    pc_tensor = pc_tensor.transpose(1, 2)
     pc_encoding = encoder(pc_tensor)
     #Add target and environment tags, pos 0 and 1
     ids = torch.tensor([[1, 0], [0,0], [0, 1]], device=device)
@@ -133,12 +134,13 @@ def create_param_viz(pcs):
 
     num_points = 200
     points = []
-    predictor = list_of_predictors["TipThenPull"]
+    predictor = list_of_predictors["PullFromShelf"]
     for idx in range(num_points):
         y = (idx/num_points )*0.6 - 0.3
         action_param = torch.tensor([y], device=pc_encoding.device, dtype=torch.float32)
         pc_encoding_param = torch.concat((pc_encoding, action_param), dim=0)
         succ_hat = float(predictor(pc_encoding_param)[0])
+        #succ_hat = 0 if y > 0.1 or y < -0.1 else 1
         points.append((x, y, z, succ_hat))
     return points
 
@@ -147,7 +149,7 @@ if __name__ == "__main__":
     with open(io_pairs_filename, 'rb') as io_pairs_fd:
         io_pairs = load(io_pairs_fd)
         
-        object_pcs = io_pairs[4][0]
+        object_pcs = io_pairs[np.random.random_integers(0, len(io_pairs))][0]
 
       
         rospy.init_node('pointcloud_display')

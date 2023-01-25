@@ -6,7 +6,7 @@ import torch
 import numpy as np
 
 #from precondition_prediction import PC_Encoder, Precond_Predictor, train
-from precondition_prediction_tf import PC_Encoder, Precond_Predictor, train
+from precondition_prediction import PC_Encoder, Precond_Predictor, train
 
 if __name__=='__main__':
     CLI=argparse.ArgumentParser()
@@ -68,7 +68,7 @@ if __name__=='__main__':
             iopairs_dict[task][datum_idx] = tensor_datum
 
     # Models saved to Checkpoints/modelname_epoch#.pth, for 1/5th of the epochs.
-    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=500, data=iopairs_dict, device=device)
+    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=20, data=iopairs_dict, device=device)
 
     #TODO:
     #
