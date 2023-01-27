@@ -1,9 +1,13 @@
 import pickle
 import os
 import numpy as np
+import random
 from tqdm import tqdm
-
+import torch
+import matplotlib.pyplot as plt
 from farthest_point_sampling import farthest_point_sampling
+from copy import deepcopy
+
 
 # Load data from pickle files
 def load_files(path = '/home/nichols/Desktop/SkillSequnceing/Data/Nov17/TipThenPull'):
@@ -40,9 +44,22 @@ def sample_pointcloud(data: dict):
     for timestep_idx in range(len(data["depth"])):
         for object_name in data["objects"]:
             pc = data["point_clouds"][timestep_idx][object_name]
+            if pc.ndim != 2:
+                print(f"Pointcloud ndim {pc.ndim}, shape {pc.shape}, for object {object_name} in timestep {timestep_idx} of {len( data['depth'] )}.")
+                continue
             farthest_indices,_ = farthest_point_sampling(pc, sampling_number)
             sampled_pc = pc[farthest_indices.squeeze()]
             data["point_clouds"][timestep_idx][object_name] = sampled_pc
+
+def farthest_point_sampling_from_pc(pointcloud):
+    sampling_number = 128
+    for object_name in pointcloud.keys():
+        pc = pointcloud[object_name]
+        farthest_indices,_ = farthest_point_sampling(pc, sampling_number)
+        sampled_pc = pc[farthest_indices.squeeze()]
+        pointcloud[object_name] = sampled_pc
+    return pointcloud
+
 
 # Extract point clouds from data
 def get_pc_from_gym(data):
@@ -109,6 +126,68 @@ def get_pc_from_gym(data):
 
     return data
 
+# Get point cloud from rgb-d and camera and seg info.
+def get_pc_from_rgb_d(rgb, dep, object_names, seg_img, seg_ids, proj_mat, view_mat):
+    point_clouds = {}
+    points = []
+
+    for object_name in object_names:
+        point_clouds[object_name] = []
+
+        color = []
+        for i_o in range(len(object_names)):
+            points.append([])
+        cam_width = 512
+        cam_height = 512
+
+        # Retrieve depth and segmentation buffer
+        depth_buffer = np.array(dep)
+        seg_buffer = seg_img
+        view_matrix = view_mat
+        projection_matrix = proj_mat
+
+        # Get camera view matrix and invert it to transform points from camera to world space
+        #print(view_matrix)
+        vinv = np.linalg.inv(np.matrix(view_matrix))
+
+        # Get camera projection matrix and necessary scaling coefficients for deprojection
+        proj = projection_matrix
+        fu = 2/proj[0, 0]
+        fv = 2/proj[1, 1]
+
+        # Ignore any points which originate from ground plane or empty space
+        depth_buffer[seg_buffer == 0] = -10001
+
+        centerU = cam_width/2
+        centerV = cam_height/2
+        for i in range(cam_width):
+            for j in range(cam_height):
+                if depth_buffer[j, i] < -10000:
+                    continue
+                # This will take all segmentation IDs. Can look at specific objects by
+                # setting equal to a specific segmentation ID, e.g. seg_buffer[j, i] == 2
+                
+                for i_o in range(len(object_names)):
+                    #Assumes object order corresponds to their seg number, which I think is true, but could be good to confirm.
+                    if seg_buffer[j, i] == i_o + 1:
+                        u = -(i-centerU)/(cam_width)  # image-space coordinate
+                        v = (j-centerV)/(cam_height)  # image-space coordinate
+                        d = depth_buffer[j, i]  # depth buffer value
+                        X2 = [d*fu*u, d*fv*v, d, 1]  # deprojection vector
+                        p2 = X2*vinv  # Inverse camera view to get world coordinates
+                        points[i_o].append([p2[0, 2], p2[0, 0], p2[0, 1]])
+                        color.append(0)
+        
+    for i_o in range(len(points)):
+        points[i_o] = np.array(points[i_o])
+        
+    idx = 0
+    for object_name in object_names:
+        point_clouds[object_name] = points[idx]
+        idx += 1
+
+    return point_clouds
+
 # Extract success metric from data
 def get_success_from_gym(data):
     target_end_pos = data['objects']['box']['position'][-1]
@@ -134,7 +213,42 @@ def get_success_from_gym(data):
 def get_action_params_from_gym(data):
     return data['objects']['box']['position'][0][1]
 
+# Add unrealistic tasks with failure.
+def expand_data(data):
+    factor = 0
+    for key in data.keys():
+        for element in deepcopy(data[key]):
+            for i in range(factor):
+                peturbation = deepcopy(data[key][i][1])
+                peturbation = random.choice([ random.uniform(-0.3, peturbation-0.05), random.uniform(peturbation+0.05, 0.3)])
+                data[key].append(
+                    [
+                        deepcopy(data[key][i][0]), # Copy pc
+                        peturbation, #Move arm to unrealistic position
+                        torch.tensor(0, device = data[key][i][0].device) #Fail
+                    ]
+                )
 
+    return data
+
+def show_pc(pointclouds):
+
+    fig = plt.figure(figsize=(4,4))
+    ax = fig.add_subplot(111, projection='3d') 
+    
+    color_arr = ['red', 'green', 'blue']
+    for i, pointcloud in enumerate(pointclouds.values()):
+        for point in pointcloud:
+            if random.randint(0, 0) == 0:
+                ax.scatter(point[0],-point[2],point[1],c=color_arr[i]) # plot the point (2,3,4) on the figure   
+    
+    # ax.set_xlim(0.6,1.4)
+    # ax.set_ylim(-0.5,0.5)
+    # ax.set_zlim(0.6,1.5)
+
+    plt.show()
+
+    
 if __name__ == '__main__':
     data = load_files()
     for dat in data:

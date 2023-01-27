@@ -5,6 +5,7 @@ import os
 import torch
 import numpy as np
 
+#from precondition_prediction import PC_Encoder, Precond_Predictor, train
 from precondition_prediction import PC_Encoder, Precond_Predictor, train
 
 if __name__=='__main__':
@@ -13,7 +14,7 @@ if __name__=='__main__':
     "--pull_paths",  # name on the CLI - drop the `--` for positional/required parameters
     nargs="*",  # 0 or more values expected => creates a list
     type=str,
-    default=['/home/nichols/Desktop/SkillSequnceing/Data/Nov17/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Nov17/PullFromShelf'],  # default if nothing is provided
+    default=['/home/nichols/Desktop/SkillSequnceing/Data/Nov20/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Nov20/PullFromShelf'],  # default if nothing is provided
     )
 
     CLI.add_argument(
@@ -66,22 +67,19 @@ if __name__=='__main__':
                 tensor_datum[i] = torch.tensor(datum[i], device=device, dtype=torch.float32)
             iopairs_dict[task][datum_idx] = tensor_datum
 
-    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=51, data=iopairs_dict, device=device)
+    # Models saved to Checkpoints/modelname_epoch#.pth, for 1/5th of the epochs.
+    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=20, data=iopairs_dict, device=device)
 
     #TODO:
-    # 1. Testing implementation: 
-    #       a. Save model
-    #       b. Communicate with gym to send actions
-    #       c. PC Prediction for each action
-    #       d. Get a desired action.
     #
     # 2. Placing books:
-    #       a. write skill to place a book
-    #       b. collect data for book placing
-    #       c. incorperate into model
+    #       e. write skill to place a book
+    #       f. collect data for book placing
+    #       g. incorperate into model
     #
     # 3. Planning:
-    #       a. Use the three skills, and a desired pc, rrt to sequence actions.
+    #       h. Use the three skills, and a desired pc, rrt to sequence actions.
+    #       i. Use more data
 
     # pc_example = iopairs_dict[tasks[0]][0][0]
     # pcl = [pc for pc in list(pc_example.values())]
