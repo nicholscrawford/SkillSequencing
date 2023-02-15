@@ -7,6 +7,7 @@ import torch
 import matplotlib.pyplot as plt
 from farthest_point_sampling import farthest_point_sampling
 from copy import deepcopy
+from pickle import load
 
 
 # Load data from pickle files
@@ -214,8 +215,7 @@ def get_action_params_from_gym(data):
     return data['objects']['box']['position'][0][1]
 
 # Add unrealistic tasks with failure.
-def expand_data(data):
-    factor = 0
+def expand_data(data, factor = 3):
     for key in data.keys():
         for element in deepcopy(data[key]):
             for i in range(factor):
@@ -249,14 +249,31 @@ def show_pc(pointclouds):
     plt.show()
 
     
-if __name__ == '__main__':
-    data = load_files()
-    for dat in data:
-        break
-        print(get_success_from_gym(dat[0]))
-        print(get_action_params_from_gym(dat[0]))
-        # pc = get_pc_from_gym(dat[0])
-        # sampled_pc = sample_pointcloud(pc)
-        # success =  get_success_from_gym(pc)
+if __name__ == "__main__":
+    io_pairs_filename = '/home/nichols/Desktop/SkillSequnceing/Data/Nov20/PullFromShelf/io_pairs.pickle'
+    with open(io_pairs_filename, 'rb') as io_pairs_fd:
+        io_pairs = load(io_pairs_fd)
+        
+        total = 0
+        totalsucc = 0
+        for i in range(len(io_pairs)):
+            object_pcs, param, succ = io_pairs[i]
+            total += 1
+            if succ:
+                totalsucc += 1
+        
+        print(f"Total success rate of {totalsucc/total} for PullFromShelf, with {total} samples.")
 
-    get_pcparam_success_pairs()
+    io_pairs_filename = '/home/nichols/Desktop/SkillSequnceing/Data/Nov20/TipThenPull/io_pairs.pickle'
+    with open(io_pairs_filename, 'rb') as io_pairs_fd:
+        io_pairs = load(io_pairs_fd)
+        
+        total = 0
+        totalsucc = 0
+        for i in range(len(io_pairs)):
+            object_pcs, param, succ = io_pairs[i]
+            total += 1
+            if succ:
+                totalsucc += 1
+        
+        print(f"Total success rate of {totalsucc/total} for TipThenPull, with {total} samples.")

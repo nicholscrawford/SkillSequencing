@@ -11,63 +11,89 @@ import sys
 import random
 import os
 from pointconvds import PointConvDensitySetAbstraction
+from dataset import get_dataloaders
 
 # Predict preconditions from a shared latent embedding. 
 
 # Training method given a dict of lists of tensor tuples, so a list of datapoints, where each point is (pc, params, success).
 # So, you can access using each predictor's name.
-def train(encoder, list_of_predictors, data, epochs=20, device=torch.cuda.is_available()):
+def train(encoder, list_of_predictors, data, epochs=200, device=torch.cuda.is_available(), batch_size = 64, lr = 0.0001):
 
     #Create optimizers
-    lr = 0.0001
     encoder_opt = torch.optim.Adam(encoder.parameters(), lr = lr)
     predictor_opts = {}
     for task, predictor in list_of_predictors.items():
         predictor_opts[task] = torch.optim.Adam(predictor.parameters(), lr = lr)
 
-    data = expand_data(data)
+    data = expand_data(data, factor=0)
     loss = nn.BCELoss()
+
+    #Get dataloaders
+    dataloaders = get_dataloaders(data, batch_size)
 
     #Define training step
     print("Training model:")
     for epoch in range(epochs):
         total_loss = 0
-        for idx in range(len(data[list(data.keys())[0]])):
-            i = random.randint(0, len(data[list(data.keys())[0]])-1)
+        #for idx in range(len(data[list(data.keys())[0]])): #Train across whole set
+        #for idx in range(batch_size): #Train only across mini batch
+        #    i = random.randint(0, len(data[list(data.keys())[0]])-1)
+        num_batches = len( dataloaders[list(dataloaders.keys())[0]])
+        for batch_idx in range(num_batches): #Assumes that each dataset is the same size. 
+            
+            encoder_opt.zero_grad() #Zero encoder grad eatch batch
             
             for task, predictor in list_of_predictors.items():
-                encoder_opt.zero_grad()
-                pc, param, succ = data[task][i]
+                pcparams, success_gts = next(iter(dataloaders[task]))
+                pointclouds, params = pcparams
 
-                predictor_opts[task].zero_grad()
-                
-                #Change shape for encoder
-                pc = pc.transpose(1, 2)
-                
-                pc_encoding = encoder(pc)
 
-                #Add target and environment tags, pos 0 and 1
-                ids = torch.tensor([[1, 0], [0,0], [0, 1]], device=device)
-                pc_encoding = torch.concat((pc_encoding, ids), dim=1)
+                predictor_opts[task].zero_grad() #Zero predictor grad eatch batch, but per predictor.
                 
-                #Add action parameter
-                pc_encoding = torch.reshape(pc_encoding, [-1]) #Flatten
-                action_param = torch.tensor([param], device=device) #Tensorify param
-                pc_encoding = torch.concat((pc_encoding, action_param), dim=0) #Combine
+                #Run each pc in batch through the encoder seperately
+                pointcloud_encodings = []
+                for idx, pc in enumerate(pointclouds):
+                    #Change shape for encoder
+                    pc = pc.transpose(1, 2)
+                    pc = pc + torch.tensor(np.random.normal(0, 0.02, tuple(pc.shape)), device=pc.device, dtype=pc.dtype) # Add gaussian noise.
+                    pc_encoding = encoder(pc)
+                    
+                    #Add target and environment tags, pos 0 and 1
+                    ids = torch.tensor([[1, 0], [0,0], [0, 1]], device=device)
+                    pc_encoding = torch.concat((pc_encoding, ids), dim=1)
 
-                succ_hat = predictor(pc_encoding)
+                    #Add action parameter
+                    pc_encoding = torch.reshape(pc_encoding, [-1]) #Flatten
+                    param = params[idx]
+                    #param = param + np.random.uniform(-0.03, 0.03) #Add uniform noise to action param
+                    param = param + np.random.normal(0, 0.02) #Add gaussian noise to action param
+                    action_param = torch.tensor([param], device=device) #Tensorify param
+                    pc_encoding = torch.concat((pc_encoding, action_param), dim=0) #Combine
+
+                    pointcloud_encodings.append(pc_encoding)
+                
+                #Put them back together
+                pointcloud_encodings = torch.stack(pointcloud_encodings)            
+
+                succ_hats = predictor(pointcloud_encodings)
 
                 #loss = ((succ - succ_hat)**2).sum()
-                succ = torch.tensor([succ], device=succ_hat.device)
-                loss_out = loss(succ_hat, succ_hat)
+                success_gts = torch.stack([success_gts]).T#, device=succ_hats.device)
+                # if succ_hat >= 1:
+                #     succ_hat = succ_hat - (succ_hat - 1)
+                loss_out = loss(succ_hats, success_gts)
                 loss_out.backward()
                 total_loss += loss_out
+
+                sys.stdout.write(f"\rLoss at for task {task} at batch {batch_idx+1}/{num_batches} is {loss_out}")
                 
                 predictor_opts[task].step()
-                encoder_opt.step()
+            encoder_opt.step()
+
 
         sys.stdout.write(f"\rTotal loss at epoch {epoch+1}/{epochs} is {total_loss}")
-        if((epoch+1)%(int(epochs/5 + 0.5))==0):
+        #if((epoch+1)%(int(epochs/20 + 0.5))==0):
+        if(True):
             # Save models.
             # It's probably fine to just save in f"Checkpoints/ModelName_{epoch}of{epochs}.pth"
             codepath = os.path.join(os.getcwd(), os.path.dirname(__file__))
@@ -108,11 +134,18 @@ class Precond_Predictor(nn.Module):
         super(Precond_Predictor, self).__init__()
         self.action_param_size = action_param_size
         self.linear_relu_stack = nn.Sequential(
+
             nn.Linear(3*(128+2)+action_param_size, 128),
+            nn.GroupNorm(1, 128),
+            nn.Dropout(0.3),
             nn.ReLU(),
-            nn.Linear(128, 32),
+
+            nn.Linear(128, 128),
+            nn.GroupNorm(1, 128),
+            nn.Dropout(0.3),
             nn.ReLU(),
-            nn.Linear(32, 1),
+
+            nn.Linear(128, 1),
             nn.Sigmoid()
         )
 

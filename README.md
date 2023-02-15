@@ -47,5 +47,4 @@ Currently some things are implemented, but need refinement and cleaning. Current
 
 **TODO:** 
 - Get sampling/prediction working
-    - BCE Loss + PointConv seems to decrease loss rapidly 157-0.0x in >10 itter. Converges to 1 for all vals.
-    - Try adding back in non-correct guesses for pickup?
+    - Fixed BCE Loss (dumb mistake), doing parameter sweep to see if I can find something that decreases over the whole dataset. Seems to be able to overfit to one, but maybe not four?

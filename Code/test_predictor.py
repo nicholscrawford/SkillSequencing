@@ -97,7 +97,7 @@ def display_intensity_pointcloud(points):
     messages.append(cloud_msg)
 
 #Loads model, and runs it on even intervals and uses predicted success as pc intensity.
-def create_param_viz(pcs):
+def create_param_viz(pcs, gt_param=None, gt_succ=None):
     #Implicit in skill
     x = 0.95
     z = 1.15
@@ -108,8 +108,8 @@ def create_param_viz(pcs):
             "PullFromShelf": None,
             "TipThenPull": None
     }
-    epochs = 20
-    epoch = 3
+    epochs = 200
+    epoch = 29
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     with open(os.path.join(codepath, f"Checkpoints/Encoder_{epoch+1}of{epochs}.pth"), "rb") as fd:
         encoder = torch.load(fd)
@@ -134,7 +134,8 @@ def create_param_viz(pcs):
 
     num_points = 200
     points = []
-    predictor = list_of_predictors["PullFromShelf"]
+    predictor = list_of_predictors["TipThenPull"]
+    #predictor = list_of_predictors["TipThenPull"]
     for idx in range(num_points):
         y = (idx/num_points )*0.6 - 0.3
         action_param = torch.tensor([y], device=pc_encoding.device, dtype=torch.float32)
@@ -142,20 +143,24 @@ def create_param_viz(pcs):
         succ_hat = float(predictor(pc_encoding_param)[0])
         #succ_hat = 0 if y > 0.1 or y < -0.1 else 1
         points.append((x, y, z, succ_hat))
+
+    if gt_param is not None:
+        points.append((x, gt_param, z, gt_succ))
     return points
 
 if __name__ == "__main__":
-    io_pairs_filename = "/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/scripts/SkillSequencing/Data/Nov17/PullFromShelf/io_pairs.pickle"
+    #io_pairs_filename = "/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/scripts/SkillSequencing/Data/Nov17/TipThenPull/io_pairs.pickle"
+    io_pairs_filename = '/home/nichols/Desktop/SkillSequnceing/Data/Feb8/TipThenPull/io_pairs.pickle'
     with open(io_pairs_filename, 'rb') as io_pairs_fd:
         io_pairs = load(io_pairs_fd)
         
-        object_pcs = io_pairs[np.random.random_integers(0, len(io_pairs))][0]
+        object_pcs, param, succ = io_pairs[np.random.randint(0, len(io_pairs)-1)]
 
-      
+        print(f"This example had a success value of {succ} with a parameter of {param}")
         rospy.init_node('pointcloud_display')
         
         display_scene_pointclouds([object_pcs['shelf'], object_pcs['box'], object_pcs['box2']])
-        display_intensity_pointcloud(create_param_viz(object_pcs))
+        display_intensity_pointcloud(create_param_viz(object_pcs))#, gt_param= param, gt_succ=succ))
         rate = rospy.Rate(1)
         while not rospy.is_shutdown():
             for i, pub in enumerate(publishers):

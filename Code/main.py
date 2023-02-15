@@ -14,7 +14,8 @@ if __name__=='__main__':
     "--pull_paths",  # name on the CLI - drop the `--` for positional/required parameters
     nargs="*",  # 0 or more values expected => creates a list
     type=str,
-    default=['/home/nichols/Desktop/SkillSequnceing/Data/Nov20/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Nov20/PullFromShelf'],  # default if nothing is provided
+    default=['/home/nichols/Desktop/SkillSequnceing/Data/Feb8/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Feb8/PullFromShelf'],  # default if nothing is provided
+    #default=['/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/PullFromShelf'],
     )
 
     CLI.add_argument(
@@ -68,7 +69,7 @@ if __name__=='__main__':
             iopairs_dict[task][datum_idx] = tensor_datum
 
     # Models saved to Checkpoints/modelname_epoch#.pth, for 1/5th of the epochs.
-    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=20, data=iopairs_dict, device=device)
+    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=200, data=iopairs_dict, device=device, batch_size=128, lr = 0.0001)
 
     #TODO:
     #
