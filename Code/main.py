@@ -19,6 +19,14 @@ if __name__=='__main__':
     )
 
     CLI.add_argument(
+    "--test_paths",  # name on the CLI - drop the `--` for positional/required parameters
+    nargs="*",  # 0 or more values expected => creates a list
+    type=str,
+    default=['/home/nichols/Desktop/SkillSequnceing/Data/Nov20/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Nov20/PullFromShelf'],  # default if nothing is provided
+    #default=['/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/PullFromShelf'],
+    )
+
+    CLI.add_argument(
     "--resample",  # name on the CLI - drop the `--` for positional/required parameters
     nargs=1,  # 0 or more values expected => creates a list
     type=bool,
@@ -41,9 +49,26 @@ if __name__=='__main__':
         else:
             with open(iopairs_path, 'rb') as fd:
                 iopairs = pickle.load(fd)
-                print(f"IO Pairs loaded from {path.split('/')[-1]}.")
+                print(f"IO Pairs loaded from {path}")
         
         iopairs_dict[path.split('/')[-1]] = iopairs
+
+    # Load I/O pairs for testing from folders
+    test_iopairs_dict = {}
+    for path in args.test_paths:
+        iopairs_path = os.path.join(path, "io_pairs.pickle")
+
+        if (not os.path.exists(iopairs_path)) or args.resample:
+            iopairs = get_pcparam_success_pairs(path)
+            with open(iopairs_path, 'wb') as fd:
+                pickle.dump(iopairs, fd, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"IO Pairs saved to {path.split('/')[-1]}.")
+        else:
+            with open(iopairs_path, 'rb') as fd:
+                iopairs = pickle.load(fd)
+                print(f"Test IO Pairs loaded from {path}")
+        
+        test_iopairs_dict[path.split('/')[-1]] = iopairs
 
     #Set device
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -68,8 +93,18 @@ if __name__=='__main__':
                 tensor_datum[i] = torch.tensor(datum[i], device=device, dtype=torch.float32)
             iopairs_dict[task][datum_idx] = tensor_datum
 
+        for datum_idx in range(len(test_iopairs_dict[task])):
+            datum = test_iopairs_dict[task][datum_idx]
+            tensor_datum = [None for _ in datum]
+            pcl = [pc for pc in list(datum[0].values())]
+            np.array(pcl)
+            tensor_datum[0] = torch.tensor(pcl, dtype=torch.float32, device=device)
+            for i in range(1, len(datum)):
+                tensor_datum[i] = torch.tensor(datum[i], device=device, dtype=torch.float32)
+            test_iopairs_dict[task][datum_idx] = tensor_datum
+
     # Models saved to Checkpoints/modelname_epoch#.pth, for 1/5th of the epochs.
-    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=200, data=iopairs_dict, device=device, batch_size=128, lr = 0.0001)
+    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=500, data=iopairs_dict, test_data=test_iopairs_dict, device=device, batch_size=128, lr = 0.001)
 
     #TODO:
     #

@@ -108,8 +108,8 @@ def create_param_viz(pcs, gt_param=None, gt_succ=None):
             "PullFromShelf": None,
             "TipThenPull": None
     }
-    epochs = 200
-    epoch = 29
+    epochs = 500
+    epoch = 152
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     with open(os.path.join(codepath, f"Checkpoints/Encoder_{epoch+1}of{epochs}.pth"), "rb") as fd:
         encoder = torch.load(fd)
@@ -140,12 +140,17 @@ def create_param_viz(pcs, gt_param=None, gt_succ=None):
         y = (idx/num_points )*0.6 - 0.3
         action_param = torch.tensor([y], device=pc_encoding.device, dtype=torch.float32)
         pc_encoding_param = torch.concat((pc_encoding, action_param), dim=0)
-        succ_hat = float(predictor(pc_encoding_param)[0])
+        succ_hat = float(predictor(pc_encoding_param))
         #succ_hat = 0 if y > 0.1 or y < -0.1 else 1
         points.append((x, y, z, succ_hat))
 
     if gt_param is not None:
         points.append((x, gt_param, z, gt_succ))
+
+    
+    points.append((x, -2, z, 1)) #Add min and max points for proper coloring in RVIZ
+    points.append((x, -2, z, 0)) #Add min and max points for proper coloring in RVIZ
+
     return points
 
 if __name__ == "__main__":

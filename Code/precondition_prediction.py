@@ -17,7 +17,7 @@ from dataset import get_dataloaders
 
 # Training method given a dict of lists of tensor tuples, so a list of datapoints, where each point is (pc, params, success).
 # So, you can access using each predictor's name.
-def train(encoder, list_of_predictors, data, epochs=200, device=torch.cuda.is_available(), batch_size = 64, lr = 0.0001):
+def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch.cuda.is_available(), batch_size = 8, lr = 0.0001):
 
     #Create optimizers
     encoder_opt = torch.optim.Adam(encoder.parameters(), lr = lr)
@@ -25,16 +25,19 @@ def train(encoder, list_of_predictors, data, epochs=200, device=torch.cuda.is_av
     for task, predictor in list_of_predictors.items():
         predictor_opts[task] = torch.optim.Adam(predictor.parameters(), lr = lr)
 
-    data = expand_data(data, factor=0)
+    data = expand_data(data, factor=1)
     loss = nn.BCELoss()
 
     #Get dataloaders
     dataloaders = get_dataloaders(data, batch_size)
-
+    
+    test_dataloaders = get_dataloaders(test_data, int(len(test_data[task])/2))
+    print(f"Test data batch size is {len(test_data[task])/2}")
     #Define training step
     print("Training model:")
     for epoch in range(epochs):
         total_loss = 0
+        total_test_loss = 0
         #for idx in range(len(data[list(data.keys())[0]])): #Train across whole set
         #for idx in range(batch_size): #Train only across mini batch
         #    i = random.randint(0, len(data[list(data.keys())[0]])-1)
@@ -85,13 +88,54 @@ def train(encoder, list_of_predictors, data, epochs=200, device=torch.cuda.is_av
                 loss_out.backward()
                 total_loss += loss_out
 
-                sys.stdout.write(f"\rLoss at for task {task} at batch {batch_idx+1}/{num_batches} is {loss_out}")
+                #sys.stdout.write(f"\rTraining loss for task {task} at batch {batch_idx+1}/{num_batches} is {loss_out}")
                 
                 predictor_opts[task].step()
             encoder_opt.step()
 
 
-        sys.stdout.write(f"\rTotal loss at epoch {epoch+1}/{epochs} is {total_loss}")
+            #Test model on test data
+            for task, predictor in list_of_predictors.items():
+                pcparams, success_gts = next(iter(test_dataloaders[task]))
+                pointclouds, params = pcparams
+
+                #Run each pc in batch through the encoder seperately
+                pointcloud_encodings = []
+                for idx, pc in enumerate(pointclouds):
+                    #Change shape for encoder
+                    pc = pc.transpose(1, 2)
+                    pc = pc + torch.tensor(np.random.normal(0, 0.02, tuple(pc.shape)), device=pc.device, dtype=pc.dtype) # Add gaussian noise.
+                    pc_encoding = encoder(pc)
+                    
+                    #Add target and environment tags, pos 0 and 1
+                    ids = torch.tensor([[1, 0], [0,0], [0, 1]], device=device)
+                    pc_encoding = torch.concat((pc_encoding, ids), dim=1)
+
+                    #Add action parameter
+                    pc_encoding = torch.reshape(pc_encoding, [-1]) #Flatten
+                    param = params[idx]
+                    #param = param + np.random.uniform(-0.03, 0.03) #Add uniform noise to action param
+                    param = param + np.random.normal(0, 0.02) #Add gaussian noise to action param
+                    action_param = torch.tensor([param], device=device) #Tensorify param
+                    pc_encoding = torch.concat((pc_encoding, action_param), dim=0) #Combine
+
+                    pointcloud_encodings.append(pc_encoding)
+                
+                #Put them back together
+                pointcloud_encodings = torch.stack(pointcloud_encodings)            
+
+                succ_hats = predictor(pointcloud_encodings)
+
+                #loss = ((succ - succ_hat)**2).sum()
+                success_gts = torch.stack([success_gts]).T#, device=succ_hats.device)
+                # if succ_hat >= 1:
+                #     succ_hat = succ_hat - (succ_hat - 1)
+                test_loss_out = loss(succ_hats, success_gts)
+                total_test_loss += loss_out
+
+                sys.stdout.write(f"\rTraining loss for task {task} at batch {batch_idx+1}/{num_batches} is {loss_out}, test loss is {test_loss_out}.")                
+
+        sys.stdout.write(f"\rTraining total loss at epoch {epoch+1}/{epochs} is {total_loss}, test loss is {total_test_loss}.")
         #if((epoch+1)%(int(epochs/20 + 0.5))==0):
         if(True):
             # Save models.
@@ -103,7 +147,8 @@ def train(encoder, list_of_predictors, data, epochs=200, device=torch.cuda.is_av
                 with open(os.path.join(codepath, f"Checkpoints/Predictor{task}_{epoch+1}of{epochs}.pth"), "wb") as fd:
                     torch.save(predictor, fd)
             print()
-    print()
+
+        "\033[A"
 
 
 
@@ -150,6 +195,8 @@ class Precond_Predictor(nn.Module):
         )
 
     def forward(self, x):
+        if len(x.shape) == 1:
+            x = x.unsqueeze(0)
         logits = self.linear_relu_stack(x)
         return logits
 
