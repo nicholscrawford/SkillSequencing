@@ -104,7 +104,7 @@ if __name__=='__main__':
             test_iopairs_dict[task][datum_idx] = tensor_datum
 
     # Models saved to Checkpoints/modelname_epoch#.pth, for 1/5th of the epochs.
-    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=500, data=iopairs_dict, test_data=test_iopairs_dict, device=device, batch_size=128, lr = 0.001)
+    train(encoder=enc, list_of_predictors=list_of_predictors, epochs=500, data=iopairs_dict, test_data=test_iopairs_dict, device=device, batch_size=64, lr = 0.001)
 
     #TODO:
     #

@@ -182,12 +182,12 @@ class Precond_Predictor(nn.Module):
 
             nn.Linear(3*(128+2)+action_param_size, 128),
             nn.GroupNorm(1, 128),
-            nn.Dropout(0.3),
+            #nn.Dropout(0.3),
             nn.ReLU(),
 
             nn.Linear(128, 128),
             nn.GroupNorm(1, 128),
-            nn.Dropout(0.3),
+            #nn.Dropout(0.3),
             nn.ReLU(),
 
             nn.Linear(128, 1),
