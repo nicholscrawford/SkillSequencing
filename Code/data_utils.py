@@ -9,6 +9,26 @@ from farthest_point_sampling import farthest_point_sampling
 from copy import deepcopy
 from pickle import load
 
+#Loads the data dictionary
+def get_iopairs_dict(paths):
+
+    iopairs_dict = {}
+    for path in paths:
+        iopairs_path = os.path.join(path, "io_pairs.pickle")
+
+        if (not os.path.exists(iopairs_path)) or args.resample:
+            iopairs = get_pcparam_success_pairs(path)
+            with open(iopairs_path, 'wb') as fd:
+                pickle.dump(iopairs, fd, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"IO Pairs saved to {path.split('/')[-1]}.")
+        else:
+            with open(iopairs_path, 'rb') as fd:
+                iopairs = pickle.load(fd)
+                print(f"IO Pairs loaded from {path}")
+        
+        iopairs_dict[path.split('/')[-1]] = iopairs
+
+    return iopairs_dict
 
 # Load data from pickle files
 def load_files(path = '/home/nichols/Desktop/SkillSequnceing/Data/Nov17/TipThenPull'):
@@ -231,6 +251,24 @@ def expand_data(data, factor = 3):
 
     return data
 
+# Add realistic tasks with success.
+def expand_data_success(data, factor = 3):
+    for key in data.keys():
+        for element in deepcopy(data[key]):
+            for i in range(factor):
+                peturbation = deepcopy(data[key][i][1])
+                peturbation = random.uniform(peturbation-0.05, peturbation+0.05)
+                data[key].append(
+                    [
+                        deepcopy(data[key][i][0]), # Copy pc
+                        peturbation, #Move arm to realistic position
+                        torch.tensor(1, device = data[key][i][0].device, dtype=torch.float32) #Fail
+                    ]
+                )
+
+    return data
+
+#Plots a point cloud, doesn't really have good performance.
 def show_pc(pointclouds):
 
     fig = plt.figure(figsize=(4,4))

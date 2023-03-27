@@ -1,4 +1,4 @@
-from data_utils import expand_data
+from data_utils import expand_data, expand_data_success
 import torch; torch.manual_seed(0)
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,13 +11,13 @@ import sys
 import random
 import os
 from pointconvds import PointConvDensitySetAbstraction
-from dataset import get_dataloaders
+from dataset import get_dataloaders_dict
 
 # Predict preconditions from a shared latent embedding. 
 
 # Training method given a dict of lists of tensor tuples, so a list of datapoints, where each point is (pc, params, success).
 # So, you can access using each predictor's name.
-def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch.cuda.is_available(), batch_size = 8, lr = 0.0001):
+def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch.cuda.is_available(), batch_size = 8, lr = 0.001):
 
     #Create optimizers
     encoder_opt = torch.optim.Adam(encoder.parameters(), lr = lr)
@@ -25,13 +25,16 @@ def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch
     for task, predictor in list_of_predictors.items():
         predictor_opts[task] = torch.optim.Adam(predictor.parameters(), lr = lr)
 
-    data = expand_data(data, factor=1)
+    for i in range(3):
+        data = expand_data_success(data, factor=1)
+        data = expand_data(data, factor=1)
+    #data = expand_data_success(data, factor=1)
     loss = nn.BCELoss()
 
     #Get dataloaders
-    dataloaders = get_dataloaders(data, batch_size)
+    dataloaders = get_dataloaders_dict(data, batch_size)
     
-    test_dataloaders = get_dataloaders(test_data, int(len(test_data[task])/2))
+    test_dataloaders = get_dataloaders_dict(test_data, max(int(len(test_data[task])/2), 1))
     print(f"Test data batch size is {len(test_data[task])/2}")
     #Define training step
     print("Training model:")
@@ -45,20 +48,24 @@ def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch
         for batch_idx in range(num_batches): #Assumes that each dataset is the same size. 
             
             encoder_opt.zero_grad() #Zero encoder grad eatch batch
+            encoder.train()
             
             for task, predictor in list_of_predictors.items():
                 pcparams, success_gts = next(iter(dataloaders[task]))
                 pointclouds, params = pcparams
 
+                pointclouds.requires_grad = True
+                params.requires_grad = True
 
                 predictor_opts[task].zero_grad() #Zero predictor grad eatch batch, but per predictor.
+                predictor.train()
                 
                 #Run each pc in batch through the encoder seperately
                 pointcloud_encodings = []
                 for idx, pc in enumerate(pointclouds):
                     #Change shape for encoder
                     pc = pc.transpose(1, 2)
-                    pc = pc + torch.tensor(np.random.normal(0, 0.02, tuple(pc.shape)), device=pc.device, dtype=pc.dtype) # Add gaussian noise.
+                    #pc = pc + torch.tensor(np.random.normal(0, 0.001, tuple(pc.shape)), device=pc.device, dtype=pc.dtype) # Add gaussian noise.
                     pc_encoding = encoder(pc)
                     
                     #Add target and environment tags, pos 0 and 1
@@ -67,11 +74,12 @@ def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch
 
                     #Add action parameter
                     pc_encoding = torch.reshape(pc_encoding, [-1]) #Flatten
-                    param = params[idx]
+                    param = params[idx].unsqueeze(0)
                     #param = param + np.random.uniform(-0.03, 0.03) #Add uniform noise to action param
-                    param = param + np.random.normal(0, 0.02) #Add gaussian noise to action param
-                    action_param = torch.tensor([param], device=device) #Tensorify param
-                    pc_encoding = torch.concat((pc_encoding, action_param), dim=0) #Combine
+                    #param = param + np.random.normal(0, 0.005) #Add gaussian noise to action param
+                    #action_param = torch.tensor([param], device=device) #Tensorify param
+                    pc_encoding = torch.concat((pc_encoding, param), dim=0) #Combine
+                    #pc_encoding = torch.concat((torch.zeros_like(pc_encoding), param), dim = 0)
 
                     pointcloud_encodings.append(pc_encoding)
                 
@@ -82,8 +90,7 @@ def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch
 
                 #loss = ((succ - succ_hat)**2).sum()
                 success_gts = torch.stack([success_gts]).T#, device=succ_hats.device)
-                # if succ_hat >= 1:
-                #     succ_hat = succ_hat - (succ_hat - 1)
+
                 loss_out = loss(succ_hats, success_gts)
                 loss_out.backward()
                 total_loss += loss_out
@@ -95,43 +102,46 @@ def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch
 
 
             #Test model on test data
-            for task, predictor in list_of_predictors.items():
-                pcparams, success_gts = next(iter(test_dataloaders[task]))
-                pointclouds, params = pcparams
-
-                #Run each pc in batch through the encoder seperately
-                pointcloud_encodings = []
-                for idx, pc in enumerate(pointclouds):
-                    #Change shape for encoder
-                    pc = pc.transpose(1, 2)
-                    pc = pc + torch.tensor(np.random.normal(0, 0.02, tuple(pc.shape)), device=pc.device, dtype=pc.dtype) # Add gaussian noise.
-                    pc_encoding = encoder(pc)
+            with torch.no_grad():
+                encoder.eval()
+                for task, predictor in list_of_predictors.items():
+                    pcparams, success_gts = next(iter(test_dataloaders[task]))
+                    pointclouds, params = pcparams
+                    predictor.eval()
                     
-                    #Add target and environment tags, pos 0 and 1
-                    ids = torch.tensor([[1, 0], [0,0], [0, 1]], device=device)
-                    pc_encoding = torch.concat((pc_encoding, ids), dim=1)
+                    #Run each pc in batch through the encoder seperately
+                    pointcloud_encodings = []
+                    for idx, pc in enumerate(pointclouds):
+                        #Change shape for encoder
+                        pc = pc.transpose(1, 2)
+                        #pc = pc + torch.tensor(np.random.normal(0, 0.02, tuple(pc.shape)), device=pc.device, dtype=pc.dtype) # Add gaussian noise.
+                        pc_encoding = encoder(pc)
+                        
+                        #Add target and environment tags, pos 0 and 1
+                        ids = torch.tensor([[1, 0], [0,0], [0, 1]], device=device)
+                        pc_encoding = torch.concat((pc_encoding, ids), dim=1)
 
-                    #Add action parameter
-                    pc_encoding = torch.reshape(pc_encoding, [-1]) #Flatten
-                    param = params[idx]
-                    #param = param + np.random.uniform(-0.03, 0.03) #Add uniform noise to action param
-                    param = param + np.random.normal(0, 0.02) #Add gaussian noise to action param
-                    action_param = torch.tensor([param], device=device) #Tensorify param
-                    pc_encoding = torch.concat((pc_encoding, action_param), dim=0) #Combine
+                        #Add action parameter
+                        pc_encoding = torch.reshape(pc_encoding, [-1]) #Flatten
+                        param = params[idx]
+                        #param = param + np.random.uniform(-0.03, 0.03) #Add uniform noise to action param
+                        #param = param + np.random.normal(0, 0.02) #Add gaussian noise to action param
+                        action_param = torch.tensor([param], device=device) #Tensorify param
+                        pc_encoding = torch.concat((pc_encoding, action_param), dim=0) #Combine
 
-                    pointcloud_encodings.append(pc_encoding)
-                
-                #Put them back together
-                pointcloud_encodings = torch.stack(pointcloud_encodings)            
+                        pointcloud_encodings.append(pc_encoding)
+                    
+                    #Put them back together
+                    pointcloud_encodings = torch.stack(pointcloud_encodings)            
 
-                succ_hats = predictor(pointcloud_encodings)
+                    succ_hats = predictor(pointcloud_encodings)
 
-                #loss = ((succ - succ_hat)**2).sum()
-                success_gts = torch.stack([success_gts]).T#, device=succ_hats.device)
-                # if succ_hat >= 1:
-                #     succ_hat = succ_hat - (succ_hat - 1)
-                test_loss_out = loss(succ_hats, success_gts)
-                total_test_loss += loss_out
+                    #loss = ((succ - succ_hat)**2).sum()
+                    success_gts = torch.stack([success_gts]).T#, device=succ_hats.device)
+                    # if succ_hat >= 1:
+                    #     succ_hat = succ_hat - (succ_hat - 1)
+                    test_loss_out = loss(succ_hats, success_gts)
+                    total_test_loss += test_loss_out
 
                 sys.stdout.write(f"\rTraining loss for task {task} at batch {batch_idx+1}/{num_batches} is {loss_out}, test loss is {test_loss_out}.")                
 
@@ -147,9 +157,6 @@ def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch
                 with open(os.path.join(codepath, f"Checkpoints/Predictor{task}_{epoch+1}of{epochs}.pth"), "wb") as fd:
                     torch.save(predictor, fd)
             print()
-
-        "\033[A"
-
 
 
 
@@ -259,15 +266,6 @@ class PointConv(nn.Module):
         l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)        
         
         x = l3_points.view(B, 128)
-        # x = F.relu(self.bn1(self.fc1(x)))
-        # x = F.relu(self.bn2(self.fc2(x)))
-
-
-
-        # x = self.drop1(F.relu(self.bn1(self.fc1(x))))
-        # x = self.drop3(F.relu(self.bn3(self.fc3(x))))
-        # x = self.drop4(F.relu(self.bn4(self.fc4(x))))
-        # x = self.fc5(x)
 
         return x
 
