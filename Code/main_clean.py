@@ -77,7 +77,7 @@ if __name__=='__main__':
     
     # Get dataloader
     train_dl = get_list_dataloader([iopairs_dict[action.action_name] for action in actions], actions, 64)
-
+    train_dl.dataset.expand()
     # use 20% of training data for validation
     #train_set_size = int(len(train_dl) * 0.8)
     #valid_set_size = len(train_dl) - train_set_size
