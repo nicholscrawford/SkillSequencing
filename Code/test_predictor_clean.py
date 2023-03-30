@@ -9,6 +9,7 @@ import torch
 import os
 import numpy as np
 import lightning.pytorch as pl
+from precondition_prediction_clean import LitPrecondPredictor
 
 
 publishers = []
@@ -103,52 +104,59 @@ def create_param_viz(pcs, gt_param=None, gt_succ=None):
     #Implicit in skill
     x = 0.95
     z = 1.15
+    
+    # Define the root directory to search
+    log_dir = os.path.join(os.environ['HOME'], 'model_data', 'precondition_predictor', 'lightning_logs')
 
-    # Load Model
-    codepath = os.path.join(os.getcwd(), os.path.dirname(__file__))
-    list_of_predictors = {
-            "PullFromShelf": None,
-            "TipThenPull": None
-    }
-    epochs = 500
-    epoch = 408
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    with open(os.path.join(codepath, f"Checkpoints/Encoder_{epoch+1}of{epochs}.pth"), "rb") as fd:
-        encoder = torch.load(fd)
-        encoder.to(device)
-        encoder.eval()
-    for task, predictor in list_of_predictors.items():
-        with open(os.path.join(codepath, f"Checkpoints/Predictor{task}_{epoch+1}of{epochs}.pth"), "rb") as fd:
-            predictor = torch.load(fd)
-            predictor.to(device)
-            predictor.eval()
-            list_of_predictors[task] = predictor
-    print(f"Loaded models from epoch {epoch+1} out of of {epochs}.")
+    # Get a list of all the directories in the root directory
+    dirs = [d for d in os.listdir(log_dir) if os.path.isdir(os.path.join(log_dir, d))]
+
+    # Sort the directories by version number (assuming the version number is always at the end of the directory name)
+    sorted_dirs = sorted(dirs, key=lambda x: int(x.split("_")[-1]))
+
+    # Get the most recent directory (which should be the last one after sorting)
+    latest_dir = sorted_dirs[-1]
+
+    # Get a list of all the .ckpt files in the latest directory
+    ckpt_files = [f for f in os.listdir(os.path.join(log_dir, latest_dir, 'checkpoints')) if f.endswith(".ckpt")]
+
+    # Sort the .ckpt files by epoch and step number (assuming they are always in the format "epoch=x-step=y.ckpt")
+    sorted_ckpts = sorted(ckpt_files, key=lambda l: (int(l.split("=")[1].split("-")[0]), int(l.split("=")[2].split(".")[0])))
+
+    # Get the most recent .ckpt file (which should be the last one after sorting)
+    latest_ckpt = sorted_ckpts[-1]
+
+    # Build and return the path to the most recent .ckpt file
+    latest_ckpt_path = os.path.join(log_dir, latest_dir, 'checkpoints', latest_ckpt)
+    model = LitPrecondPredictor.load_from_checkpoint(latest_ckpt_path, None, None)
+    model.eval()
+
+    print(f"Loaded model version {latest_dir.split('_')[-1]}, ckpt {latest_ckpt_path}")
 
     with torch.no_grad():
         #Get encoded point cloud
         pcl = [pc for pc in list(pcs.values())]
         np.array(pcl)
-        pc_tensor = torch.tensor(pcl, dtype=torch.float32, device=device)
+        pc_tensor = torch.tensor(pcl, dtype=torch.float32, device=model.device)
         pc_tensor = pc_tensor.transpose(1, 2)
-        pc_encoding = encoder(pc_tensor)
-        #Add target and environment tags, pos 0 and 1
-        ids = torch.tensor([[1, 0], [0,0], [0, 1]], device=device)
-        pc_encoding = torch.concat((pc_encoding, ids), dim=1)
-        pc_encoding = torch.reshape(pc_encoding, [-1])
 
         num_points = 200
         points = []
-        predictor = list_of_predictors["TipThenPull"]
-        #predictor = list_of_predictors["TipThenPull"]
-        for idx in range(num_points):
-            y = (idx/num_points )*0.6 - 0.3
-            action_param = torch.tensor([y], device=pc_encoding.device, dtype=torch.float32)
-            pc_encoding_param = torch.concat((pc_encoding, action_param), dim=0)
-            succ_hat = float(predictor(pc_encoding_param))
-            #succ_hat = 0 if y > 0.1 or y < -0.1 else 1
-            points.append((x, y, z, succ_hat))
 
+        action_params = torch.tensor([
+            [(idx/num_points )*0.6 - 0.3 for idx in range(num_points)],
+            [(idx/num_points )*0.6 - 0.3 for idx in range(num_points)]
+        ], device=model.device, dtype=torch.float32)
+        successes = model((pc_tensor, action_params))
+                #pc_encoding_param = torch.concat((pc_encoding, action_param), dim=0)
+                #succ_hat = float(predictor(pc_encoding_param))
+                #succ_hat = 0 if y > 0.1 or y < -0.1 else 1
+
+        #points.append((x, y, z, succ_hat))
+        points = [(x, (idx/num_points )*0.6 - 0.3, z, successes[0][idx].item()) for idx in range(num_points)] + \
+            [(x, (idx/num_points )*0.6 - 0.3, z+0.03, successes[1][idx].item()) for idx in range(num_points)]
+            
+        
         if gt_param is not None:
             points.append((x, gt_param, z, gt_succ))
 
@@ -159,14 +167,13 @@ def create_param_viz(pcs, gt_param=None, gt_succ=None):
     return points
 
 if __name__ == "__main__":
-    #io_pairs_filename = "/home/nichols/catkin_ws/src/ll4ma_isaac/ll4ma_isaacgym/src/ll4ma_isaacgym/scripts/SkillSequencing/Data/Nov17/TipThenPull/io_pairs.pickle"
-    io_pairs_filename = '/home/nichols/Desktop/SkillSequnceing/Data/Feb8/TipThenPull/io_pairs.pickle'
+    io_pairs_filename = os.path.join(os.environ['HOME'], 'model_data', 'precondition_predictor', '2023-feb-8', 'TipThenPull', 'io_pairs.pickle')
     with open(io_pairs_filename, 'rb') as io_pairs_fd:
         io_pairs = load(io_pairs_fd)
         
         object_pcs, param, succ = io_pairs[np.random.randint(0, len(io_pairs)-1)]
-
         print(f"This example had a success value of {succ} with a parameter of {param}")
+
         rospy.init_node('pointcloud_display')
         
         display_scene_pointclouds([object_pcs['shelf'], object_pcs['box'], object_pcs['box2']])

@@ -10,13 +10,13 @@ from copy import deepcopy
 from pickle import load
 
 #Loads the data dictionary
-def get_iopairs_dict(paths):
+def get_iopairs_dict(paths, resample = False):
 
     iopairs_dict = {}
     for path in paths:
         iopairs_path = os.path.join(path, "io_pairs.pickle")
 
-        if (not os.path.exists(iopairs_path)) or args.resample:
+        if (not os.path.exists(iopairs_path)) or resample:
             iopairs = get_pcparam_success_pairs(path)
             with open(iopairs_path, 'wb') as fd:
                 pickle.dump(iopairs, fd, protocol=pickle.HIGHEST_PROTOCOL)

@@ -1,10 +1,10 @@
 from dataclasses import dataclass
+import enum
 from re import T
 from torch.utils.data import DataLoader
 from action_info import action
-
-
-
+import torch
+import numpy as np
 
 def get_dataloaders_dict(task_io_pairs, batch_size):
     dataloaders = {}
@@ -13,8 +13,22 @@ def get_dataloaders_dict(task_io_pairs, batch_size):
 
     return dataloaders
 
-def get_list_dataloader(io_pairs_list, actions, batch_size):
-    return DataLoader(task_dataset(io_pairs_list, actions), batch_size=batch_size, shuffle=True)
+def get_list_dataloader(iopairs, actions, batch_size):
+    if type(iopairs[0][0][0]) == torch.Tensor:
+        return DataLoader(list_task_dataset(iopairs, actions), batch_size=batch_size, shuffle=False)
+    
+    for action_iopairs_idx, action_iopairs in enumerate(iopairs):
+                # Format data to tensors
+            for datum_idx, datum in enumerate(action_iopairs):
+                pcl = [pc for pc in list(datum[0].values())]
+                pcl = np.array(pcl)
+                iopairs[action_iopairs_idx][datum_idx] = [
+                    torch.tensor(pcl, dtype=torch.float32),
+                    torch.tensor(datum[1], dtype=torch.float32), #action param
+                    torch.tensor(datum[2], dtype=torch.float32),
+                    ]
+
+    return DataLoader(list_task_dataset(iopairs, actions), batch_size=batch_size, shuffle=False)
 
 
 class task_dataset:
@@ -33,10 +47,10 @@ class task_dataset:
 class list_task_dataset:
     def __init__(self, io_pairs_list, actions) -> None:
         self.io_pairs_list = io_pairs_list
-        self.actions
+        self.actions = actions
 
     def __len__(self) -> int:
-        return len(self.io_pairs[0])
+        return len(self.io_pairs_list[0])
     
     def __getitem__(self, idx):
         #Shape is [num_actions]

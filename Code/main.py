@@ -14,16 +14,16 @@ if __name__=='__main__':
     "--pull_paths",  # name on the CLI - drop the `--` for positional/required parameters
     nargs="*",  # 0 or more values expected => creates a list
     type=str,
-    default=['/home/nichols/Desktop/SkillSequnceing/Data/Feb8/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Feb8/PullFromShelf'],  # default if nothing is provided
-    #default=['/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/PullFromShelf'],
+    # default=['/home/nichols/Desktop/SkillSequnceing/Data/Feb8/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Feb8/PullFromShelf'],  # default if nothing is provided
+    default=['/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/PullFromShelf'],
     )
 
     CLI.add_argument(
     "--test_paths",  # name on the CLI - drop the `--` for positional/required parameters
     nargs="*",  # 0 or more values expected => creates a list
     type=str,
-    default=['/home/nichols/Desktop/SkillSequnceing/Data/Nov20/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Nov20/PullFromShelf'],  # default if nothing is provided
-    #default=['/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/PullFromShelf'],
+    # default=['/home/nichols/Desktop/SkillSequnceing/Data/Nov20/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/Nov20/PullFromShelf'],  # default if nothing is provided
+    default=['/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/TipThenPull', '/home/nichols/Desktop/SkillSequnceing/Data/SingleExample/PullFromShelf'],
     )
 
     CLI.add_argument(

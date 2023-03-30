@@ -78,8 +78,8 @@ def train(encoder, list_of_predictors, data, test_data, epochs=200, device=torch
                     #param = param + np.random.uniform(-0.03, 0.03) #Add uniform noise to action param
                     #param = param + np.random.normal(0, 0.005) #Add gaussian noise to action param
                     #action_param = torch.tensor([param], device=device) #Tensorify param
-                    pc_encoding = torch.concat((pc_encoding, param), dim=0) #Combine
-                    #pc_encoding = torch.concat((torch.zeros_like(pc_encoding), param), dim = 0)
+                    #pc_encoding = torch.concat((pc_encoding, param), dim=0) #Combine
+                    pc_encoding = torch.concat((torch.zeros_like(pc_encoding), param), dim = 0)
 
                     pointcloud_encodings.append(pc_encoding)
                 
