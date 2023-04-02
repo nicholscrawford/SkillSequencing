@@ -6,7 +6,6 @@ import torch
 import numpy as np
 from action_info import action
 import lightning.pytorch as pl
-import torch.utils.data as data
 import datetime
 
 from precondition_prediction_clean import LitPrecondPredictor

@@ -126,18 +126,18 @@ class LitPrecondPredictor(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         loss = self.run_batch(batch, batch_idx)
         # Logging to TensorBoard (if installed) by default
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, sync_dist=True)
         return loss
     
     def validation_step(self, batch, batch_idx):
         loss = self.run_batch(batch, batch_idx)
         # Logging to TensorBoard (if installed) by default
-        self.log("validation_loss", loss)
+        self.log("validation_loss", loss, sync_dist=True)
     
     def testing_step(self, batch, batch_idx):
         loss = self.run_batch(batch, batch_idx)
         # Logging to TensorBoard (if installed) by default
-        self.log("test_loss", loss)
+        self.log("test_loss", loss, sync_dist=True)
 
     def run_batch(self, batch, batch_idx):
         '''
