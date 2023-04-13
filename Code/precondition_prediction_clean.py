@@ -80,6 +80,7 @@ class LitPrecondPredictor(pl.LightningModule):
         self.actions = actions
         self.loss_func = nn.BCELoss()
         self.lr = lr
+        self.actions = actions
 
     def forward(self, x):
         '''
@@ -195,3 +196,34 @@ class LitPrecondPredictor(pl.LightningModule):
         optimizer = optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
 
+def load_latest_ckpt(print_version=True):
+    # Define the root directory to search
+    log_dir = os.path.join(os.environ['HOME'], 'model_data', 'precondition_predictor', 'lightning_logs')
+
+    # Get a list of all the directories in the root directory
+    dirs = [d for d in os.listdir(log_dir) if os.path.isdir(os.path.join(log_dir, d))]
+
+    # Sort the directories by version number (assuming the version number is always at the end of the directory name)
+    sorted_dirs = sorted(dirs, key=lambda x: int(x.split("_")[-1]))
+
+    # Get the most recent directory (which should be the last one after sorting)
+    latest_dir = sorted_dirs[-1]
+
+    # Get a list of all the .ckpt files in the latest directory
+    ckpt_files = [f for f in os.listdir(os.path.join(log_dir, latest_dir, 'checkpoints')) if f.endswith(".ckpt")]
+
+    # Sort the .ckpt files by epoch and step number (assuming they are always in the format "epoch=x-step=y.ckpt")
+    sorted_ckpts = sorted(ckpt_files, key=lambda l: (int(l.split("=")[1].split("-")[0]), int(l.split("=")[2].split(".")[0])))
+
+    # Get the most recent .ckpt file (which should be the last one after sorting)
+    latest_ckpt = sorted_ckpts[-1]
+
+    # Build and return the path to the most recent .ckpt file
+    latest_ckpt_path = os.path.join(log_dir, latest_dir, 'checkpoints', latest_ckpt)
+    model = LitPrecondPredictor.load_from_checkpoint(latest_ckpt_path, None, None)
+    model.eval()
+
+    if print_version:
+        print(f"Loaded model version {latest_dir.split('_')[-1]}, ckpt {latest_ckpt_path}")
+
+    return model
